@@ -14,7 +14,6 @@ jobs:
 
       - name: Convert YML to HTML
         run: |
-          npx @redocly/cli build-docs <api>
           redoc-cli bundle reference/schema.yaml -o ./docs/index.html
 
       - name: Deploy to GitHub Pages

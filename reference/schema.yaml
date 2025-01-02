@@ -1,0 +1,789 @@
+openapi: 3.0.3
+info:
+  title: Edisonlight  REST API
+  description: >
+    Next.js (App Router) + Flask バックエンド で構築する際の
+    REST API 仕様例。
+    microCMS で取得した記事データなどを返却・登録・削除など行う。
+  version: 0.0.1
+servers:
+  - url: https://api.example.com
+    description: Production server
+  - url: https://staging-api.example.com
+    description: Staging server
+
+tags:
+  - name: Articles
+    description: 記事に関するAPI
+  - name: Users
+    description: ユーザーに関するAPI
+  - name: Favorites
+    description: お気に入りに関するAPI
+  - name: Tags
+    description: タグに関するAPI
+  - name: Tools
+    description: ツールに関するAPI
+
+paths:
+  ################################################
+  # 1. 記事の全件取得 (GET /articles)
+  # 3. 記事の投稿 (POST /articles)
+  ################################################
+  /articles:
+    get:
+      tags:
+        - Articles
+      summary: 記事の全件取得
+      description: 登録されている記事をすべて取得する
+      operationId: getAllArticles
+      security:
+        - {}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Article'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    post:
+      tags:
+        - Articles
+      summary: 記事の投稿
+      description: 新規記事を投稿する（ID発行とタグの紐付けを実施する）
+      operationId: createArticle
+      security:
+        - BearerAuth: [writer]  # WRITERロールが必要
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ArticleCreateRequest'
+      responses:
+        '201':
+          description: Created
+        '400':
+          description: Bad Request
+        '401':
+          description: Unauthorized
+        '500':
+          description: Internal Server Error
+
+  ################################################
+  # 2. 特定記事の取得 (GET /articles/{contentId})
+  ################################################
+  /articles/{contentId}:
+    parameters:
+      - in: path
+        name: contentId
+        required: true
+        schema:
+          type: string
+        description: 記事のコンテンツID
+    get:
+      tags:
+        - Articles
+      summary: 特定記事の取得
+      description: contentId を指定して記事情報を取得する
+      operationId: getArticleById
+      security:
+        - {}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Article'
+        '404':
+          description: Not Found
+        '500':
+          description: Internal Server Error
+  ################################################
+  # 4. 記事の削除 (DELETE /articles/{contentId}/delete)
+  ################################################
+  /articles/{contentId}/delete:
+    parameters:
+      - in: path
+        name: contentId
+        required: true
+        schema:
+          type: string
+        description: 削除対象の記事のコンテンツID
+    delete:
+      tags:
+        - Articles
+      summary: 記事の削除
+      description: contentId を指定して記事を削除する
+      operationId: deleteArticle
+      security:
+        - BearerAuth: [writer]
+      responses:
+        '204':
+          description: No Content
+        '401':
+          description: Unauthorized
+        '404':
+          description: Not Found
+        '500':
+          description: Internal Server Error
+
+  ################################################
+  # 5. 記事の公開停止 (POST /articles/{contentId}/unpublish)
+  ################################################
+  /articles/{contentId}/unpublish:
+    parameters:
+      - in: path
+        name: contentId
+        required: true
+        schema:
+          type: string
+    post:
+      tags:
+        - Articles
+      summary: 記事の公開停止
+      description: contentId を指定して記事を公開停止 (状態を変更) する
+      operationId: unpublishArticle
+      security:
+        - BearerAuth: [writer]
+      responses:
+        '200':
+          description: OK
+        '401':
+          description: Unauthorized
+        '404':
+          description: Not Found
+        '500':
+          description: Internal Server Error
+
+  ################################################
+  # 6. ユーザー登録 (POST /users)
+  ################################################
+  /users:
+    post:
+      tags:
+        - Users
+      summary: ユーザー登録
+      description: メールアドレスとパスワードによるユーザー登録
+      operationId: createUser
+      security:
+        - {}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              properties:
+                email:
+                  type: string
+                password:
+                  type: string
+      responses:
+        '201':
+          description: Created
+        '400':
+          description: Bad Request
+        '409':
+          description: Conflict (ユーザーが既に存在など)
+        '500':
+          description: Internal Server Error
+
+  ################################################
+  # 7. ユーザー認証 (POST /auth)
+  ################################################
+  /auth:
+    post:
+      tags:
+        - Users
+      summary: ユーザー認証
+      description: メールアドレスとパスワードによる認証 (JWT発行)
+      operationId: login
+      security:
+        - {}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              properties:
+                email:
+                  type: string
+                password:
+                  type: string
+      responses:
+        '200':
+          description: OK (JWTを返却)
+          content:
+            application/json:
+              schema:
+                properties:
+                  token:
+                    type: string
+                  userInfo:
+                    $ref: '#/components/schemas/User'
+        '401':
+          description: Unauthorized
+        '500':
+          description: Internal Server Error
+
+  ################################################
+  # 8. お気に入り登録 (POST /favorites)
+  ################################################
+  /favorites:
+    post:
+      tags:
+        - Favorites
+      summary: お気に入り登録
+      description: contentId, userId を指定してお気に入りに登録
+      operationId: addFavorite
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              properties:
+                contentId:
+                  type: string
+                userId:
+                  type: string
+      responses:
+        '201':
+          description: Created
+        '401':
+          description: Unauthorized
+        '500':
+          description: Internal Server Error
+
+  ################################################
+  # 9. お気に入り解除 (DELETE /favorites/delete)
+  ################################################
+  /favorites/delete:
+    delete:
+      tags:
+        - Favorites
+      summary: お気に入り解除
+      description: contentId, userId を指定してお気に入りを解除
+      operationId: removeFavorite
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: contentId
+          schema:
+            type: string
+          required: true
+        - in: query
+          name: userId
+          schema:
+            type: string
+          required: true
+      responses:
+        '204':
+          description: No Content
+        '401':
+          description: Unauthorized
+        '500':
+          description: Internal Server Error
+
+  ################################################
+  # 10. ユーザー削除 (DELETE /users/{userId})
+  ################################################
+  /users/{userId}:
+    parameters:
+      - in: path
+        name: userId
+        required: true
+        schema:
+          type: string
+    delete:
+      tags:
+        - Users
+      summary: ユーザー削除
+      description: ユーザーIDを指定して削除
+      operationId: deleteUser
+      security:
+        - BearerAuth: [admin]  # ADMINロール
+      responses:
+        '204':
+          description: No Content
+        '401':
+          description: Unauthorized
+        '404':
+          description: Not Found
+        '500':
+          description: Internal Server Error
+
+  ################################################
+  # 11,12. タグの紐付け (POST / DELETE)
+  # /articles/{contentId}/tags/{tagId}
+  ################################################
+  /articles/{contentId}/tags/{tagId}:
+    parameters:
+      - in: path
+        name: contentId
+        required: true
+        schema:
+          type: string
+      - in: path
+        name: tagId
+        required: true
+        schema:
+          type: string
+    post:
+      tags:
+        - Tags
+      summary: タグの紐付け
+      description: 記事にタグを紐付ける (ArticleTagに追加)
+      operationId: attachTag
+      security:
+        - BearerAuth: [writer]
+      responses:
+        '201':
+          description: Created
+        '401':
+          description: Unauthorized
+        '500':
+          description: Internal Server Error
+
+    delete:
+      tags:
+        - Tags
+      summary: タグの紐付け解除
+      description: 記事に紐づいたタグを削除
+      operationId: detachTag
+      security:
+        - BearerAuth: [writer]
+      responses:
+        '204':
+          description: No Content
+        '401':
+          description: Unauthorized
+        '500':
+          description: Internal Server Error
+
+  ################################################
+  # 13. タグの全件取得 (GET /tags)
+  # 20. タグの追加 (POST /tags)
+  ################################################
+  /tags:
+    get:
+      tags:
+        - Tags
+      summary: タグの全件取得
+      description: 登録されているタグを全て取得
+      operationId: getAllTags
+      security:
+        - {}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Tag'
+        '500':
+          description: Internal Server Error
+
+    post:
+      tags:
+        - Tags
+      summary: タグの追加
+      description: 新規タグの登録 (ADMIN)
+      operationId: createTag
+      security:
+        - BearerAuth: [admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TagCreateRequest'
+      responses:
+        '201':
+          description: Created
+        '400':
+          description: Bad Request
+        '401':
+          description: Unauthorized
+        '500':
+          description: Internal Server Error
+
+  ################################################
+  # 14. 記事に紐づいたタグの取得 (GET /articles/{contentId}/tags)
+  ################################################
+  /articles/{contentId}/tags:
+    parameters:
+      - in: path
+        name: contentId
+        required: true
+        schema:
+          type: string
+    get:
+      tags:
+        - Tags
+      summary: 記事に紐づいたタグを取得
+      description: 記事IDを指定して、その記事に関連付けされたタグを返却
+      operationId: getTagsByArticle
+      security:
+        - {}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Tag'
+        '404':
+          description: Not Found
+        '500':
+          description: Internal Server Error
+
+  ################################################
+  # 15. ツールの全件取得 (GET /tools)
+  # 17. ツールの追加 (POST /tools)
+  ################################################
+  /tools:
+    get:
+      tags:
+        - Tools
+      summary: ツールの全件取得
+      description: 登録されているツールをすべて取得する
+      operationId: getAllTools
+      security:
+        - {}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Tool'
+        '500':
+          description: Internal Server Error
+
+    post:
+      tags:
+        - Tools
+      summary: ツールの追加
+      description: 新規ツールの登録
+      operationId: createTool
+      security:
+        - BearerAuth: [admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ToolCreateRequest'
+      responses:
+        '201':
+          description: Created
+        '400':
+          description: Bad Request
+        '401':
+          description: Unauthorized
+        '500':
+          description: Internal Server Error
+
+  ################################################
+  # 16. 特定ツールの取得 (GET /tools/{toolId})
+  # 18. ツールの削除 (DELETE /tools/{toolId})
+  ################################################
+  /tools/{toolId}:
+    parameters:
+      - in: path
+        name: toolId
+        required: true
+        schema:
+          type: string
+    get:
+      tags:
+        - Tools
+      summary: 特定ツールの取得
+      description: ツールIDを指定して取得する
+      operationId: getToolById
+      security:
+        - {}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tool'
+        '404':
+          description: Not Found
+        '500':
+          description: Internal Server Error
+
+    delete:
+      tags:
+        - Tools
+      summary: ツールの削除
+      description: toolId を指定してツールを削除
+      operationId: deleteTool
+      security:
+        - BearerAuth: [admin]
+      responses:
+        '204':
+          description: No Content
+        '401':
+          description: Unauthorized
+        '404':
+          description: Not Found
+        '500':
+          description: Internal Server Error
+
+  ################################################
+  # 19. 特定記事の記事内容取得 (GET /articles/{contentId}/content)
+  ################################################
+  /articles/{contentId}/content:
+    parameters:
+      - in: path
+        name: contentId
+        required: true
+        schema:
+          type: string
+    get:
+      tags:
+        - Articles
+      summary: 特定記事の記事内容取得
+      description: contentId を指定して記事の詳細内容 (microCMS の content など) を取得
+      operationId: getArticleContent
+      security:
+        - {}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArticleContent'
+        '404':
+          description: Not Found
+        '500':
+          description: Internal Server Error
+
+  ################################################
+  # 21. タグの削除 (DELETE /tags/{tagId})
+  ################################################
+  /tags/{tagId}:
+    parameters:
+      - in: path
+        name: tagId
+        required: true
+        schema:
+          type: string
+    delete:
+      tags:
+        - Tags
+      summary: タグの削除
+      description: tagId を指定してタグを削除 (ADMIN)
+      operationId: deleteTag
+      security:
+        - BearerAuth: [admin]
+      responses:
+        '204':
+          description: No Content
+        '401':
+          description: Unauthorized
+        '404':
+          description: Not Found
+        '500':
+          description: Internal Server Error
+
+#---------------------------------------------------------
+# Components セクション
+#---------------------------------------------------------
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    GoogleSSO:
+      type: openIdConnect
+      openIdConnectUrl: https://accounts.google.com/.well-known/openid-configuration
+
+  schemas:
+    ###################################
+    # Article (記事) の例
+    ###################################
+    Article:
+      type: object
+      properties:
+        articleId:
+          type: integer
+        writerId:
+          type: integer
+        toolId:
+          type: integer
+        recommend:
+          type: boolean
+        # microCMSから取得した情報が格納される想定
+        microCMSData:
+          type: object
+          description: microCMSのフィールドをそのまま保持する例
+          properties:
+            id:
+              type: string
+            createdAt:
+              type: string
+              format: date-time
+            updatedAt:
+              type: string
+              format: date-time
+            publishedAt:
+              type: string
+              format: date-time
+            revisedAt:
+              type: string
+              format: date-time
+            title:
+              type: string
+            content:
+              type: string
+              description: リッチエディタ形式の場合はHTMLやobject形式もあり得る
+
+    ArticleCreateRequest:
+      type: object
+      properties:
+        writerId:
+          type: integer
+        toolId:
+          type: integer
+        recommend:
+          type: boolean
+        # microCMS用に投稿したいデータ
+        microCMSData:
+          type: object
+          properties:
+            title:
+              type: string
+            content:
+              type: string
+
+    ArticleContent:
+      type: object
+      properties:
+        contentId:
+          type: string
+        content:
+          description: microCMSのcontentフィールド想定（HTML or Objectなど）
+          oneOf:
+            - type: string
+            - type: object
+
+    ###################################
+    # User (ユーザー) の例
+    ###################################
+    User:
+      type: object
+      properties:
+        userId:
+          type: integer
+        name:
+          type: string
+        role:
+          type: string
+          enum: [USER, WRITER, ADMIN]
+        description:
+          type: string
+
+    ###################################
+    # Tool (ツール) の例
+    ###################################
+    Tool:
+      type: object
+      properties:
+        toolId:
+          type: integer
+        name:
+          type: string
+        cost:
+          type: integer
+        accuracy:
+          type: integer
+        function:
+          type: integer
+        description:
+          type: string
+        comment:
+          type: string
+        imagePath:
+          type: string
+        relatedTools:
+          type: array
+          items:
+            type: integer
+
+    ToolCreateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        cost:
+          type: integer
+        accuracy:
+          type: integer
+        function:
+          type: integer
+        description:
+          type: string
+        comment:
+          type: string
+        imagePath:
+          type: string
+        relatedTools:
+          type: array
+          items:
+            type: integer
+
+    ###################################
+    # Tag (タグ) の例
+    ###################################
+    Tag:
+      type: object
+      properties:
+        tagId:
+          type: integer
+        name:
+          type: string
+        isCategory:
+          type: boolean
+
+    TagCreateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        isCategory:
+          type: boolean
+
+    ###################################
+    # Error Response (汎用)
+    ###################################
+    ErrorResponse:
+      type: object
+      properties:
+        errorCode:
+          type: string
+        message:
+          type: string
